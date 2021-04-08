@@ -76,7 +76,6 @@ int __init proc_init(void) {
 }
 
 void __exit proc_exit(void) {
-	remove_proc_entry(DEVICE_NAME, NULL);
 	proc_remove(my_proc);
 
 	if (data.buf != NULL)
