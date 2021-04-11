@@ -8,63 +8,70 @@
 #define MAX_DATA_LEN 4096
 #define DEVICE_NAME "my_proc"
 
-struct my_data {
-	char *buf;
-	int size;
-};
+int data[] = {1, 2, 3, 4, 5};
+const int size = 5;
 
-static struct my_data data;
 static struct proc_dir_entry *my_proc = NULL;
 
-ssize_t device_read(struct file *filp, char *buf, size_t count, loff_t *f_pos) {
-	int copied;
+void *device_start(struct seq_file *s, loff_t *pos) {
+	printk(KERN_INFO "[%s] %s - pos = %lld\n",
+			DEVICE_NAME, __func__, *pos);
+	if (*pos >= size) {
+		printk(KERN_INFO "[%s] %s - we're finished\n", DEVICE_NAME,
+				__func__);
+		return NULL;
+	}
 
-	if (count > data.size)
-		count = data.size;
-
-	copied = copy_to_user(data.buf, buf, count);
-	return (count - copied);
+	return data + *pos;
 }
 
-ssize_t device_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos) {
-	int copied;
+void device_stop(struct seq_file *s, void *v) {
 
-	if (count > MAX_DATA_LEN)
-		count = MAX_DATA_LEN;
-
-	copied = copy_from_user(data.buf, buf, count);
-	data.buf[count - copied] = '\0';
-	data.size = count - copied;
-	return (count - copied);
 }
 
+void *device_next(struct seq_file *s, void *v, loff_t *pos) {
+	printk(KERN_INFO "[%s] %s - pos = %lld", DEVICE_NAME, __func__,
+			*pos);
+	(*pos)++;
+	if (*pos >= size) {
+		return NULL;
+	}
+	printk("[%s] %s - returned data: %d\n", DEVICE_NAME, __func__,
+			(data[*pos]));
+	return data + *pos;
+}
+
+/* v is what returned by next */
 int device_show(struct seq_file *m, void *v) {
-	seq_printf(m, "%s", data.buf);
-	
+	printk(KERN_INFO "[%s] - %s printed %d\n", DEVICE_NAME, __func__,
+			*(int*)v);
+	seq_printf(m, "%d\n", *(int*)v);
 	return 0;
 }
 
+
+static const struct seq_operations s_ops = {
+	.start = device_start,
+	.next = device_next,
+	.stop = device_stop,
+	.show = device_show
+};
+
 int device_open(struct inode *inode, struct file *file) {
-	return single_open(file, device_show, NULL);
+	/* open using seq_file interface */
+	return seq_open(file, &s_ops);
 }
 
-static const struct proc_ops fops = {
+static const struct proc_ops p_ops = {
+	/* read, lseek, release is processed by seq_file interface */
 	.proc_read = seq_read,
 	.proc_open = device_open,
-	.proc_write = device_write,
-	.proc_release = single_release,
+	.proc_release = seq_release,
 	.proc_lseek = seq_lseek,
 };
 
 int __init proc_init(void) {
-	if ((data.buf = (char*)kmalloc(MAX_DATA_LEN + 1, GFP_KERNEL)) == NULL) {
-		printk(KERN_ALERT "[%s] %s - kmalloc failed\n",
-				DEVICE_NAME, __func__);
-		return -ENOMEM;
-	}
-	data.size = 0;
-
-	if ((my_proc = proc_create(DEVICE_NAME, 0666, NULL, &fops)) == NULL) {
+	if ((my_proc = proc_create(DEVICE_NAME, 0666, NULL, &p_ops)) == NULL) {
 		printk(KERN_ALERT "[%s] %s - proc_create failed\n",
 				DEVICE_NAME, __func__);
 		return -ENOMEM;
@@ -77,9 +84,6 @@ int __init proc_init(void) {
 
 void __exit proc_exit(void) {
 	proc_remove(my_proc);
-
-	if (data.buf != NULL)
-		kfree(data.buf);
 	printk(KERN_ALERT "[%s] %s - successfully unloaded!\n",
 			DEVICE_NAME, __func__);
 }
