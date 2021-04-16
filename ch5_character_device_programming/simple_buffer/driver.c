@@ -20,6 +20,7 @@
 #define DEVICE_NAME "helloworld"
 
 static dev_t my_dev;
+static struct class *my_class;
 static struct cdev my_cdev;
 
 static int size = 0;
@@ -65,7 +66,7 @@ ssize_t device_write(struct file *filp, const char *buf, size_t count, loff_t *f
 
 	size = count;
 	copied = copy_from_user(device_buf, buf, count);
-	printk("[%s] copied count = %d, size = %d\n", __func__, count, copied);
+	printk("[%s] copied count = %ld, size = %u\n", __func__, count, copied);
 	return count - copied;
 }
 
@@ -80,7 +81,7 @@ ssize_t device_read(struct file *filp, char *buf, size_t count, loff_t *fpos) {
 		count = size;
 
 	copied = copy_to_user(buf, device_buf, count);
-	printk("[%s] copied count = %d, size = %d\n", __func__, count, size);
+	printk("[%s] copied count = %ld, size = %u\n", __func__, count, size);
 	return (count - copied);
 }
 
@@ -89,24 +90,45 @@ int	__init device_init(void) {
 	/* try allocating character device */
 	if (alloc_chrdev_region(&my_dev, MINOR_BASE, 1, DEVICE_NAME)) {
 		printk(KERN_ALERT "[%s] alloc_chrdev_region failed\n", __func__);
-		return -1;
+		goto err_return;
 	}
 
+	/* init cdev */
 	cdev_init(&my_cdev, &fops);
 
-	/* init and add cdev */
+	/* add cdev */
 	if (cdev_add(&my_cdev, my_dev, 1)) {
 		printk(KERN_ALERT "[%s] cdev_add failed\n", __func__);
-		unregister_chrdev_region(my_dev, 1);
-		return -1;
+		goto unreg_device;
+	}
+
+	if ((my_class = class_create(THIS_MODULE, "example")) == NULL) {
+		printk(KERN_ALERT "[%s] class_add failed\n", __func__);
+		goto unreg_device;
+	}
+
+	if (device_create(my_class, NULL, my_dev, NULL, "example") == NULL) {
+		goto unreg_class;
 	}
 
 	printk("[%s] successfully created device: Major = %d, Minor = %d",
 			__func__, MAJOR(my_dev), MINOR(my_dev));
 	return 0;
+
+unreg_class:
+	class_destroy(my_class);
+
+unreg_device:
+	unregister_chrdev_region(my_dev, 1);
+
+err_return:
+	return -1;
 }
 
 void __exit	device_exit(void) {
+	device_destroy(my_class, my_dev);
+	class_destroy(my_class);
+	cdev_del(&my_cdev);
 	unregister_chrdev_region(my_dev, 1);
 	if (device_buf != NULL)
 		kfree(device_buf);
