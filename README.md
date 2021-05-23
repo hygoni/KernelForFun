@@ -1,2 +1,3 @@
-# linux-kernel-programming-book
-"IT Expert 리눅스 커널 프로그래밍", 한동훈 - 연습문제
+# Kernel For Fun
+
+It was originally some book exercises, but going to add various topics and examples.
